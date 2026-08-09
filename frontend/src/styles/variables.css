@@ -1,0 +1,133 @@
+/* ===== 玻璃拟态清新风（默认） ===== */
+:root {
+  /* ── 全局渐变背景 ── */
+  --app-bg: linear-gradient(135deg, #f0e7ff 0%, #ffe7f0 100%);
+
+  /* ── 玻璃拟态核心变量 ── */
+  --glass-bg: rgba(255, 255, 255, 0.6);
+  --glass-bg-hover: rgba(255, 255, 255, 0.8);
+  --glass-bg-active: rgba(210, 190, 255, 0.4);
+  --glass-border: rgba(255, 255, 255, 0.8);
+  --glass-blur: blur(20px);
+  --glass-radius: 16px;
+  --glass-radius-sm: 12px;
+  --glass-radius-xs: 8px;
+  --glass-shadow: 0 8px 32px rgba(180, 160, 220, 0.15);
+  --glass-shadow-sm: 0 2px 12px rgba(180, 160, 220, 0.1);
+  --glass-shadow-lg: 0 16px 48px rgba(160, 140, 200, 0.18);
+
+  /* ── 主题色（淡紫-浅粉渐变系） ── */
+  --color-accent-purple: #7c5cbf;
+  --color-accent-purple-light: #d8b8ff;
+  --color-accent-pink-light: #ffc8dd;
+  --color-accent-gradient: linear-gradient(135deg, #d8b8ff 0%, #ffc8dd 100%);
+  --color-accent-gradient-btn: linear-gradient(135deg, #c9a8f0 0%, #e8b8d8 100%);
+
+  /* ── 文字色 ── */
+  --color-text: #303133;
+  --color-text-secondary: #6b6e75;
+  --color-text-muted: #909399;
+  --color-text-purple: #7c5cbf;
+
+  /* ── 气泡 ── */
+  --bubble-user-bg: linear-gradient(135deg, #d8b8ff 0%, #ffc8dd 100%);
+  --bubble-user-text: #ffffff;
+  --bubble-assistant-bg: rgba(255, 255, 255, 0.7);
+  --bubble-assistant-text: #303133;
+  --bubble-radius: 16px;
+
+  /* ── 代码块 ── */
+  --code-bg: #2a2a3a;
+  --code-text: #e0e0f0;
+  --code-radius: 8px;
+
+  /* ── 侧边栏/布局 ── */
+  --sidebar-width: 280px;
+  --topbar-height: 64px;
+
+  /* ── 字体 ── */
+  --font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --font-size: 14px;
+
+  /* ── 过渡动画 ── */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+}
+
+/* ===== 深色模式（预留，当前默认浅色） ===== */
+html.dark {
+  --app-bg: linear-gradient(135deg, #1a1a2e 0%, #2a1a2e 100%);
+  --glass-bg: rgba(30, 30, 50, 0.6);
+  --glass-bg-hover: rgba(40, 40, 60, 0.8);
+  --glass-bg-active: rgba(120, 100, 180, 0.3);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  --glass-shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.2);
+  --glass-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.4);
+
+  --color-text: #e0e0f0;
+  --color-text-secondary: #a0a0b8;
+  --color-text-muted: #78789a;
+  --color-text-purple: #b8a0e0;
+
+  --bubble-assistant-bg: rgba(40, 40, 60, 0.7);
+  --bubble-assistant-text: #e0e0f0;
+
+  --code-bg: #1a1a2e;
+  --code-text: #c0c0e0;
+}
+
+/* ===== 全局基础样式 ===== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  color: var(--color-text);
+  background: var(--app-bg);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+}
+
+/* ── 滚动条美化 ── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(180, 160, 210, 0.4);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(160, 140, 200, 0.6);
+}
+
+/* ── 全局覆盖 Element Plus 默认直角样式 ── */
+.el-button {
+  border-radius: var(--glass-radius-sm) !important;
+}
+
+.el-input__wrapper {
+  border-radius: var(--glass-radius) !important;
+}
