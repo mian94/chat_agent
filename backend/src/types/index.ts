@@ -22,6 +22,12 @@ export interface ChatSession {
   updatedAt: number;
 }
 
+/** 聊天请求体 */
+export interface ChatRequest {
+  messages: Pick<ChatMessage, 'role' | 'content'>[];
+  mode: TutorMode;
+}
+
 /** API 通用响应 */
 export interface ApiResponse<T = unknown> {
   success: boolean;

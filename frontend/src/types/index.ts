@@ -7,6 +7,8 @@ export interface ChatMessage {
   role: MessageRole;
   content: string;
   timestamp: number;
+  /** 发送时的辅导模式（记录历史上下文） */
+  mode?: TutorMode;
   /** 工具调用信息（可选） */
   toolCalls?: ToolCallInfo[];
 }
@@ -26,7 +28,6 @@ export type TutorMode = 'quiz' | 'qa' | 'mock';
 export interface ChatSession {
   id: string;
   title: string;
-  mode: TutorMode;
   messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;

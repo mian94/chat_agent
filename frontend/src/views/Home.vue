@@ -7,7 +7,7 @@
           <span class="title-icon">✦</span>
           前端面试 Agent
         </h1>
-        <button class="btn-new-chat" @click="handleNewChat">
+        <button class="btn-new-chat" @click="showModeDialog = true">
           <el-icon><Plus /></el-icon>
           新建会话
         </button>
@@ -23,6 +23,26 @@
         />
       </div>
 
+      <!-- 模式筛选 -->
+      <div class="mode-filter">
+        <button
+          class="filter-btn"
+          :class="{ active: !store.modeFilter }"
+          @click="store.setModeFilter(null)"
+        >
+          全部
+        </button>
+        <button
+          v-for="mode in MODE_LIST"
+          :key="mode.key"
+          class="filter-btn"
+          :class="{ active: store.modeFilter === mode.key }"
+          @click="store.setModeFilter(mode.key)"
+        >
+          {{ mode.label }}
+        </button>
+      </div>
+
       <div class="session-list">
         <div
           v-for="session in filteredSessions"
@@ -32,7 +52,18 @@
           @click="store.switchSession(session.id)"
         >
           <div class="session-info">
-            <div class="session-title">{{ session.title }}</div>
+            <div class="session-header">
+              <div class="session-title">{{ session.title }}</div>
+              <div class="session-modes">
+                <span
+                  v-for="m in store.getSessionModes(session)"
+                  :key="m"
+                  class="mode-badge"
+                >
+                  {{ MODE_LABELS[m] }}
+                </span>
+              </div>
+            </div>
             <div class="session-preview">{{ store.getSessionPreview(session) }}</div>
           </div>
           <button
@@ -58,9 +89,6 @@
           <h2 class="current-title">
             {{ store.activeSession?.title || '新会话' }}
           </h2>
-          <span v-if="store.activeSession" class="session-mode-badge">
-            {{ MODE_LABELS[store.activeSession.mode] }}
-          </span>
         </div>
         <div class="mode-tabs">
           <button
@@ -78,17 +106,17 @@
       <!-- 消息滚动区 -->
       <div class="chat-messages" ref="messagesRef">
         <!-- 空状态 -->
-        <div v-if="store.activeMessages.length === 0" class="empty-state">
+        <div v-if="!store.activeSession || store.activeMessages.length === 0" class="empty-state">
           <div class="empty-icon">
             <span class="empty-emoji">💬</span>
           </div>
           <p class="empty-title">开始你的前端面试之旅</p>
           <p class="empty-hint">选择一种辅导模式，输入你的第一个问题</p>
           <div class="empty-suggestions">
-            <span class="suggestion-tag">Vue 响应式原理</span>
-            <span class="suggestion-tag">React Fiber 架构</span>
-            <span class="suggestion-tag">JS 闭包与作用域</span>
-            <span class="suggestion-tag">CSS 布局与 BFC</span>
+            <span class="suggestion-tag" @click="handleSuggestionClick('Vue 响应式原理')">Vue 响应式原理</span>
+            <span class="suggestion-tag" @click="handleSuggestionClick('React Fiber 架构')">React Fiber 架构</span>
+            <span class="suggestion-tag" @click="handleSuggestionClick('JS 闭包与作用域')">JS 闭包与作用域</span>
+            <span class="suggestion-tag" @click="handleSuggestionClick('CSS 布局与 BFC')">CSS 布局与 BFC</span>
           </div>
         </div>
 
@@ -100,7 +128,20 @@
           :class="msg.role"
         >
           <div class="message-bubble">
+            <div class="message-header">
+              <span v-if="msg.mode" class="mode-badge">
+                {{ MODE_LABELS[msg.mode] }}
+              </span>
+            </div>
             <div class="message-content" v-html="renderMarkdown(msg.content)"></div>
+            <div class="message-actions">
+              <button class="action-btn" title="复制" @click="handleCopyMessage(msg.content)">
+                📋
+              </button>
+              <button class="action-btn" title="删除" @click="handleDeleteMessage(msg.id)">
+                🗑️
+              </button>
+            </div>
           </div>
         </div>
 
@@ -146,13 +187,35 @@
         </button>
       </div>
     </main>
+
+    <!-- 模式选择弹窗 -->
+    <div v-if="showModeDialog" class="mode-dialog-overlay" @click="showModeDialog = false">
+      <div class="mode-dialog" @click.stop>
+        <h3 class="dialog-title">选择辅导模式</h3>
+        <p class="dialog-subtitle">为新会话选择一种辅导模式</p>
+        <div class="mode-options">
+          <button
+            v-for="mode in MODE_LIST"
+            :key="mode.key"
+            class="mode-option"
+            @click="handleCreateWithMode(mode.key)"
+          >
+            <span class="mode-option-icon">{{ mode.icon }}</span>
+            <span class="mode-option-label">{{ mode.label }}</span>
+            <span class="mode-option-desc">{{ mode.description }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, h } from 'vue'
+import { ref, computed, nextTick, watch, h } from 'vue'
 import { Plus, Search, Close, Promotion, Link } from '@element-plus/icons-vue'
 import { useChatStore, MODE_LABELS, MODE_LIST } from '@/stores/chat'
+import { renderMarkdown } from '@/utils/markdown'
+import { ElMessage } from 'element-plus'
 import type { TutorMode } from '@/types'
 
 /* ── 自定义代码图标（Element Plus 无内置 code 图标） ── */
@@ -180,11 +243,22 @@ const CodeIcon = {
 
 const store = useChatStore()
 
+/** 监听 AI 回复内容变化，流式输出时自动滚动到底部 */
+watch(
+  () => store.activeMessages.at(-1)?.content,
+  () => {
+    if (store.isLoading) {
+      nextTick(() => scrollToBottom())
+    }
+  },
+)
+
 /* ── 状态 ── */
 const searchKeyword = ref('')
 const inputText = ref('')
 const messagesRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
+const showModeDialog = ref(false)
 
 /* ── 计算属性 ── */
 const filteredSessions = computed(() => {
@@ -198,36 +272,60 @@ function handleModeSwitch(mode: TutorMode) {
   store.setMode(mode)
 }
 
-/** 新建会话 */
-function handleNewChat() {
-  store.createSession()
+/** 使用指定模式创建新会话 */
+async function handleCreateWithMode(mode: TutorMode) {
+  await store.createSession(mode)
+  showModeDialog.value = false
   searchKeyword.value = ''
   nextTick(() => scrollToBottom())
 }
 
 /** 删除会话 */
-function handleDeleteSession(id: string) {
-  store.deleteSession(id)
+async function handleDeleteSession(id: string) {
+  await store.deleteSession(id)
+}
+
+/** 删除消息 */
+async function handleDeleteMessage(messageId: string) {
+  if (store.activeSession) {
+    await store.deleteMessage(store.activeSession.id, messageId)
+  }
+}
+
+/** 复制消息内容 */
+async function handleCopyMessage(content: string) {
+  try {
+    await navigator.clipboard.writeText(content)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+/** 点击建议标签 */
+function handleSuggestionClick(text: string) {
+  inputText.value = text
+  nextTick(() => inputRef.value?.focus())
 }
 
 /** 发送消息 */
-function handleSend() {
-  if (!inputText.value.trim()) return
+async function handleSend() {
+  const content = inputText.value.trim()
+  if (!content || store.isLoading) return
 
-  // 如果当前没有活跃会话，先创建一个
-  if (!store.activeSession) {
-    store.createSession()
-  }
-
-  // TODO: 对接后端 API 发送消息
-  // 目前只清空输入框作为演示
+  // 清空输入框并重置高度
   inputText.value = ''
   nextTick(() => {
-    scrollToBottom()
     if (inputRef.value) {
       inputRef.value.style.height = 'auto'
     }
   })
+
+  // 发送消息（如果没有活跃会话，会自动使用当前模式创建）
+  await store.sendMessage(content)
+
+  // 回复完成后滚动到底部
+  nextTick(() => scrollToBottom())
 }
 
 /** 自动调整输入框高度 */
@@ -245,89 +343,6 @@ function scrollToBottom() {
   }
 }
 
-/**
- * 简易 Markdown 渲染器
- * 支持：代码块、行内代码、加粗、标题、表格、列表
- */
-function renderMarkdown(text: string): string {
-  let html = text
-    // 转义 HTML
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-
-  // 代码块 ```...```
-  html = html.replace(
-    /```(\w*)\n([\s\S]*?)```/g,
-    (_: string, lang: string, code: string) => {
-      const langLabel = lang ? `<span class="code-lang">${lang}</span>` : ''
-      const codeHtml = code
-        .replace(/(\/\/.*)/g, '<span class="token-comment">$1</span>')
-        .replace(
-          /\b(function|return|const|let|var|new|if|else|for|of|in|this|class|export|import|from|default|async|await|try|catch)\b/g,
-          '<span class="token-keyword">$1</span>',
-        )
-        .replace(/\b(true|false|null|undefined)\b/g, '<span class="token-boolean">$1</span>')
-        .replace(/'([^']*)'/g, "<span class=\"token-string\">'$1'</span>")
-        .replace(/"([^"]*)"/g, '<span class="token-string">"$1"</span>')
-        .replace(/\b(\d+)\b/g, '<span class="token-number">$1</span>')
-      return `<pre class="code-block">${langLabel}<code>${codeHtml}</code></pre>`
-    },
-  )
-
-  // 行内代码 `...`
-  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-
-  // 加粗 **...**
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-
-  // 标题 ### ...
-  html = html.replace(/^### (.+)$/gm, '<h4 class="md-h4">$1</h4>')
-  html = html.replace(/^## (.+)$/gm, '<h3 class="md-h3">$1</h3>')
-
-  // 无序列表 - ...
-  html = html.replace(/^- (.+)$/gm, '<li class="md-li">$1</li>')
-
-  // 简单表格处理（Markdown 表格 → HTML 表格）
-  html = html.replace(
-    /\|(.+)\|\n\|[-\s|]+\|\n((?:\|.+\|\n?)*)/g,
-    (_: string, header: string, body: string) => {
-      const headers = header
-        .split('|')
-        .map((h: string) => h.trim())
-        .filter(Boolean)
-      const rows = body
-        .trim()
-        .split('\n')
-        .map((row: string) =>
-          row
-            .split('|')
-            .map((c: string) => c.trim())
-            .filter(Boolean),
-        )
-      let tableHtml = '<table class="md-table"><thead><tr>'
-      headers.forEach((h: string) => {
-        tableHtml += `<th>${h}</th>`
-      })
-      tableHtml += '</tr></thead><tbody>'
-      rows.forEach((cols: string[]) => {
-        tableHtml += '<tr>'
-        cols.forEach((c: string) => {
-          tableHtml += `<td>${c}</td>`
-        })
-        tableHtml += '</tr>'
-      })
-      tableHtml += '</tbody></table>'
-      return tableHtml
-    },
-  )
-
-  // 换行
-  html = html.replace(/\n\n/g, '<br><br>')
-  html = html.replace(/\n/g, '<br>')
-
-  return html
-}
 </script>
 
 <style scoped>
@@ -435,6 +450,40 @@ function renderMarkdown(text: string): string {
   color: var(--color-text-muted);
 }
 
+/* ── 模式筛选 ── */
+.mode-filter {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm);
+}
+
+.filter-btn {
+  flex: 1;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-family);
+}
+
+.filter-btn:hover {
+  color: var(--color-text-purple);
+  background: var(--glass-bg-hover);
+}
+
+.filter-btn.active {
+  background: var(--color-accent-gradient);
+  color: #ffffff;
+}
+
 /* ── 会话列表 ── */
 .session-list {
   flex: 1;
@@ -472,6 +521,13 @@ function renderMarkdown(text: string): string {
   overflow: hidden;
 }
 
+.session-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 .session-title {
   font-size: 14px;
   font-weight: 500;
@@ -479,7 +535,24 @@ function renderMarkdown(text: string): string {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.session-modes {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.mode-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--glass-bg-active);
+  color: var(--color-text-purple);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .session-preview {
@@ -714,6 +787,59 @@ function renderMarkdown(text: string): string {
   line-height: 1.65;
   font-size: 14px;
   word-break: break-word;
+  position: relative;
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.message-header .mode-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(160, 120, 200, 0.15);
+  color: var(--color-text-purple);
+  font-weight: 500;
+}
+
+.message-row.user .message-header .mode-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.message-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.message-bubble:hover .message-actions {
+  opacity: 1;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: var(--glass-bg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 14px;
+}
+
+.action-btn:hover {
+  background: var(--glass-bg-active);
+  transform: scale(1.1);
 }
 
 .message-row.user .message-bubble {
@@ -995,4 +1121,102 @@ function renderMarkdown(text: string): string {
   cursor: not-allowed;
   box-shadow: none;
 }
+
+/* ═══ 模式选择弹窗 ═══ */
+.mode-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.mode-dialog {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius);
+  padding: 32px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  animation: slideUp 0.3s ease;
+  min-width: 360px;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.dialog-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.dialog-subtitle {
+  font-size: 14px;
+  color: var(--color-text-muted);
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm);
+  background: var(--glass-bg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  font-family: var(--font-family);
+}
+
+.mode-option:hover {
+  background: var(--glass-bg-active);
+  transform: translateX(4px);
+  box-shadow: var(--glass-shadow-sm);
+}
+
+.mode-option-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+}
+
+.mode-option-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.mode-option-desc {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
 </style>
