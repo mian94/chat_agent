@@ -101,6 +101,26 @@
             {{ mode.label }}
           </button>
         </div>
+        <div class="topbar-right">
+          <!-- Agent模式开关 -->
+          <label class="switch-label" title="启用Agent模式（支持工具调用）">
+            <input 
+              type="checkbox" 
+              v-model="store.useAgentMode"
+              @change="store.setUseAgentMode(store.useAgentMode)"
+            />
+            <span class="switch-text">Agent</span>
+          </label>
+          <!-- 调试模式开关 -->
+          <label class="switch-label" title="启用调试模式（显示工具调用日志）">
+            <input 
+              type="checkbox" 
+              v-model="store.debugMode"
+              @change="store.setDebugMode(store.debugMode)"
+            />
+            <span class="switch-text">调试</span>
+          </label>
+        </div>
       </header>
 
       <!-- 消息滚动区 -->
@@ -121,29 +141,57 @@
         </div>
 
         <!-- 消息列表 -->
-        <div
-          v-for="msg in store.activeMessages"
-          :key="msg.id"
-          class="message-row"
-          :class="msg.role"
-        >
-          <div class="message-bubble">
-            <div class="message-header">
-              <span v-if="msg.mode" class="mode-badge">
-                {{ MODE_LABELS[msg.mode] }}
-              </span>
-            </div>
-            <div class="message-content" v-html="renderMarkdown(msg.content)"></div>
-            <div class="message-actions">
-              <button class="action-btn" title="复制" @click="handleCopyMessage(msg.content)">
-                📋
-              </button>
-              <button class="action-btn" title="删除" @click="handleDeleteMessage(msg.id)">
-                🗑️
-              </button>
+        <template v-for="msg in store.activeMessages" :key="msg.id">
+          <!-- 用户消息 -->
+          <div
+            v-if="msg.role === 'user'"
+            class="message-row user"
+          >
+            <div class="message-bubble">
+              <div class="message-header">
+                <span v-if="msg.mode" class="mode-badge">
+                  {{ MODE_LABELS[msg.mode] }}
+                </span>
+              </div>
+              <div class="message-content" v-html="renderMarkdown(msg.content)"></div>
+              <div class="message-actions">
+                <button class="action-btn" title="复制" @click="handleCopyMessage(msg.content)">
+                  📋
+                </button>
+                <button class="action-btn" title="删除" @click="handleDeleteMessage(msg.id)">
+                  🗑️
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+          <!-- 调试日志（在用户消息下方，AI回答之前） -->
+          <ToolCallLog 
+            v-if="msg.role === 'user' && store.useAgentMode && store.debugMode"
+            :events="msg.debugEvents || []"
+          />
+          <!-- AI消息 -->
+          <div
+            v-if="msg.role === 'assistant'"
+            class="message-row assistant"
+          >
+            <div class="message-bubble">
+              <div class="message-header">
+                <span v-if="msg.mode" class="mode-badge">
+                  {{ MODE_LABELS[msg.mode] }}
+                </span>
+              </div>
+              <div class="message-content" v-html="renderMarkdown(msg.content)"></div>
+              <div class="message-actions">
+                <button class="action-btn" title="复制" @click="handleCopyMessage(msg.content)">
+                  📋
+                </button>
+                <button class="action-btn" title="删除" @click="handleDeleteMessage(msg.id)">
+                  🗑️
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
 
         <!-- 加载动画 -->
         <div v-if="store.isLoading" class="message-row assistant">
@@ -217,6 +265,7 @@ import { useChatStore, MODE_LABELS, MODE_LIST } from '@/stores/chat'
 import { renderMarkdown } from '@/utils/markdown'
 import { ElMessage } from 'element-plus'
 import type { TutorMode } from '@/types'
+import ToolCallLog from '@/components/ToolCallLog.vue'
 
 /* ── 自定义代码图标（Element Plus 无内置 code 图标） ── */
 const CodeIcon = {
@@ -322,7 +371,11 @@ async function handleSend() {
   })
 
   // 发送消息（如果没有活跃会话，会自动使用当前模式创建）
-  await store.sendMessage(content)
+  if (store.useAgentMode) {
+    await store.sendAgentMessage(content)
+  } else {
+    await store.sendMessage(content)
+  }
 
   // 回复完成后滚动到底部
   nextTick(() => scrollToBottom())
@@ -352,7 +405,7 @@ function scrollToBottom() {
 .glass-app {
   display: flex;
   height: 100%;
-  min-width: 1000px;
+  width: 100%;
   overflow: hidden;
 }
 
@@ -360,11 +413,13 @@ function scrollToBottom() {
 .sidebar {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
+  max-width: var(--sidebar-width);
   display: flex;
   flex-direction: column;
   height: 100%;
   padding: 16px;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 /* ── 侧边栏头部 ── */
@@ -607,6 +662,7 @@ function scrollToBottom() {
   height: 100%;
   padding: 16px 16px 16px 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 /* ── 顶部栏 ── */
@@ -775,6 +831,15 @@ function scrollToBottom() {
 .message-row.user {
   align-self: flex-end;
   justify-content: flex-end;
+}
+
+/* 调试日志样式（在用户消息下方，左对齐） */
+:deep(.tool-call-log) {
+  align-self: flex-start;
+  max-width: 80%;
+  min-width: 200px;
+  width: fit-content;
+  flex-shrink: 0;
 }
 
 .message-row.assistant {
@@ -1217,6 +1282,213 @@ function scrollToBottom() {
   font-size: 13px;
   color: var(--color-text-muted);
   line-height: 1.4;
+}
+
+/* Agent模式和调试模式开关样式 */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+}
+
+.switch-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #409eff);
+}
+
+.switch-text {
+  font-size: 12px;
+  color: var(--color-text-muted, #666);
+  font-weight: 500;
+}
+
+.switch-label:hover .switch-text {
+  color: var(--color-text, #333);
+}
+
+/* ══════════════════════════════════════════════════
+   响应式布局
+   ══════════════════════════════════════════════════ */
+
+/* 平板设备 (768px - 1024px) */
+@media (max-width: 1024px) {
+  :root {
+    --sidebar-width: 240px;
+  }
+  
+  .sidebar {
+    padding: 12px;
+  }
+  
+  .app-title {
+    font-size: 16px;
+  }
+  
+  .mode-tab {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+}
+
+/* 移动端 (< 768px) */
+@media (max-width: 768px) {
+  .glass-app {
+    flex-direction: column;
+  }
+  
+  .sidebar {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    max-height: 50vh;
+    padding: 12px;
+    gap: 8px;
+    border-right: none;
+    border-bottom: 1px solid var(--glass-border);
+  }
+  
+  .sidebar-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  
+  .app-title {
+    font-size: 16px;
+  }
+  
+  .btn-new-chat {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  
+  .mode-filter {
+    flex-wrap: wrap;
+  }
+  
+  .filter-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  
+  .session-list {
+    max-height: 200px;
+  }
+  
+  .chat-main {
+    height: auto;
+    min-height: 50vh;
+    padding: 12px;
+  }
+  
+  .chat-topbar {
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  
+  .topbar-left {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .current-title {
+    font-size: 14px;
+    max-width: 200px;
+  }
+  
+  .mode-tabs {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .mode-tab {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  
+  .topbar-right {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .chat-messages {
+    padding: 12px 8px;
+    gap: 12px;
+  }
+  
+  .message-bubble {
+    max-width: 95%;
+  }
+  
+  .chat-input-area {
+    padding: 8px 12px;
+  }
+  
+  .input-wrapper {
+    padding: 10px;
+  }
+  
+  .input-field {
+    font-size: 14px;
+  }
+  
+  .send-btn {
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+}
+
+/* 超小屏幕 (< 480px) */
+@media (max-width: 480px) {
+  .sidebar {
+    max-height: 40vh;
+    padding: 8px;
+  }
+  
+  .search-box {
+    padding: 8px 10px;
+  }
+  
+  .session-item {
+    padding: 8px 10px;
+  }
+  
+  .chat-main {
+    padding: 8px;
+  }
+  
+  .chat-topbar {
+    padding: 8px;
+  }
+  
+  .mode-tab {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  
+  .chat-messages {
+    padding: 8px;
+  }
+  
+  .message-bubble {
+    padding: 10px 12px;
+  }
+  
+  .chat-input-area {
+    padding: 6px 8px;
+  }
 }
 
 </style>

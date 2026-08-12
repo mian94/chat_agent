@@ -100,6 +100,7 @@ export async function saveSessionMeta(meta: SessionMeta): Promise<void> {
 
 /**
  * 保存完整会话（元数据 + 消息）
+ * 注意：移除 debugEvents 字段，因为它包含不可序列化的对象
  */
 export async function saveSession(session: ChatSession): Promise<void> {
   const db = await getDB();
@@ -109,9 +110,10 @@ export async function saveSession(session: ChatSession): Promise<void> {
   const { messages, ...meta } = session;
   await tx.objectStore('sessions').put(meta);
   
-  // 保存消息
+  // 保存消息（移除 debugEvents 字段）
   for (const msg of messages) {
-    await tx.objectStore('messages').put({ ...msg, sessionId: session.id });
+    const { debugEvents, ...msgForDB } = msg;
+    await tx.objectStore('messages').put({ ...msgForDB, sessionId: session.id });
   }
   
   await tx.done;
@@ -156,10 +158,13 @@ export async function getMessagesBySession(sessionId: string): Promise<ChatMessa
 
 /**
  * 保存消息（新增或更新）
+ * 注意：移除 debugEvents 字段，因为它包含不可序列化的对象
  */
 export async function saveMessage(message: ChatMessage & { sessionId: string }): Promise<void> {
   const db = await getDB();
-  await db.put('messages', message);
+  // 移除 debugEvents 字段，避免 DataCloneError
+  const { debugEvents, ...messageForDB } = message;
+  await db.put('messages', messageForDB);
 }
 
 /**

@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import http from 'http';
 import { apiRouter } from './routes';
 import { handleChatSSE } from './chat-handler';
+import { handleAgentChat } from './agent-handler';
 
 dotenv.config();
 
@@ -28,6 +29,20 @@ const server = http.createServer((req, res) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
       // 调用 SSE 处理器
       handleChatSSE(req, res, body);
+    });
+    return;
+  }
+
+  // Agent 聊天接口（支持工具调用）
+  if (req.method === 'POST' && req.url === '/api/agent/chat') {
+    // 收集请求体
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      // 设置 CORS
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      // 调用 Agent 处理器
+      handleAgentChat(req, res, body);
     });
     return;
   }

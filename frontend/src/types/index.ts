@@ -11,6 +11,8 @@ export interface ChatMessage {
   mode?: TutorMode;
   /** 工具调用信息（可选） */
   toolCalls?: ToolCallInfo[];
+  /** 调试日志（仅用户消息，用于显示工具调用过程） */
+  debugEvents?: ToolCallEvent[];
 }
 
 /** 工具调用信息 */
@@ -46,4 +48,35 @@ export interface HealthCheckResponse {
   status: string;
   timestamp: string;
   version: string;
+}
+
+/** 调试日志 */
+export interface DebugLog {
+  id: string;
+  timestamp: number;
+  toolName: string;
+  parameters: any;
+  status: 'executing' | 'success' | 'error';
+  result?: any;
+  error?: string;
+  duration?: number;
+  llmDecision?: string;
+  reflection?: string;
+}
+
+/** 工具调用事件 */
+export interface ToolCallEvent {
+  type: 'tool_call' | 'tool_result' | 'reflection' | 'task_plan';
+  toolName?: string;
+  parameters?: any;
+  result?: any;
+  message: string;
+  timestamp: number;
+  debugLog?: DebugLog;
+}
+
+/** Agent消息（扩展版） */
+export interface AgentMessage extends ChatMessage {
+  debugLogs?: DebugLog[];
+  toolCallEvents?: ToolCallEvent[];
 }

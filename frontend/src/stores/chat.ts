@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { ChatSession, ChatMessage, TutorMode } from '@/types';
-import { sendChatMessage } from '@/api';
+import type { ChatSession, ChatMessage, TutorMode, ToolCallEvent } from '@/types';
+import { sendChatMessage, sendAgentChatMessage } from '@/api';
 import {
   getAllSessions,
   saveSession,
@@ -78,6 +78,15 @@ export const useChatStore = defineStore('chat', () => {
 
   /** 模式筛选（null 表示不筛选） */
   const modeFilter = ref<TutorMode | null>(null);
+
+  /** 是否启用Agent模式（支持工具调用） */
+  const useAgentMode = ref(false);
+
+  /** 是否启用调试模式 */
+  const debugMode = ref(false);
+
+  /** 当前会话的工具调用事件 */
+  const toolCallEvents = ref<ToolCallEvent[]>([]);
 
   /**
    * 从 IndexedDB 加载会话数据
@@ -317,6 +326,104 @@ export const useChatStore = defineStore('chat', () => {
     );
   }
 
+  /**
+   * 发送Agent消息（支持工具调用）
+   * @param content 用户消息内容
+   */
+  async function sendAgentMessage(content: string) {
+    // 确保有活跃会话
+    const session = await ensureSession();
+    if (!session) return;
+
+    // 记录当前使用的模式
+    const messageMode = currentMode.value;
+
+    // 判断是否需要表明身份
+    const shouldIntroduce = lastUsedMode.value !== messageMode;
+    lastUsedMode.value = messageMode;
+
+    // 追加用户消息（附带调试日志数组）
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content,
+      timestamp: Date.now(),
+      mode: messageMode,
+      debugEvents: [], // 调试日志绑定到用户消息
+    };
+    session.messages.push(userMessage);
+    session.updatedAt = Date.now();
+
+    // 如果是第一条消息，生成标题
+    if (session.messages.length === 1) {
+      session.title = generateTitle(content);
+    }
+
+    // 保存用户消息到 IndexedDB
+    await saveMessage({ ...userMessage, sessionId: session.id });
+    await saveSession(session);
+
+    // 创建空的 AI 消息占位
+    const assistantMessageId = `assistant-${Date.now()}`;
+    const assistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      mode: messageMode,
+    };
+    session.messages.push(assistantMessage);
+    isLoading.value = true;
+
+    // 构造请求消息（不含最后的空 AI 占位）
+    const requestMessages = session.messages
+      .slice(0, -1)
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    // 流式调用 Agent API
+    await sendAgentChatMessage(
+      requestMessages,
+      messageMode,
+      shouldIntroduce,
+      debugMode.value,
+      // onDelta: 追加内容到 AI 消息
+      (delta) => {
+        const msg = session.messages.find((m) => m.id === assistantMessageId);
+        if (msg) msg.content += delta;
+      },
+      // onDone: 完成
+      async () => {
+        isLoading.value = false;
+        // 保存 AI 消息到 IndexedDB
+        const msg = session.messages.find((m) => m.id === assistantMessageId);
+        if (msg) {
+          await saveMessage({ ...msg, sessionId: session.id });
+          await saveSession(session);
+        }
+      },
+      // onError: 错误处理
+      async (error) => {
+        const msg = session.messages.find((m) => m.id === assistantMessageId);
+        if (msg) {
+          msg.content = `❌ ${error}`;
+          // 保存错误消息到 IndexedDB
+          await saveMessage({ ...msg, sessionId: session.id });
+          await saveSession(session);
+        }
+        isLoading.value = false;
+      },
+      // onDebugEvent: 调试事件处理（绑定到用户消息）
+      (event) => {
+        console.log('[调试模式] 收到调试事件:', event.type, event.message);
+        const userMsg = session.messages.find((m) => m.id === userMessage.id);
+        if (userMsg && userMsg.debugEvents) {
+          userMsg.debugEvents.push(event);
+          console.log('[调试模式] 当前事件总数:', userMsg.debugEvents.length);
+        }
+      },
+    );
+  }
+
   return {
     sessions,
     activeSessionId,
@@ -339,5 +446,13 @@ export const useChatStore = defineStore('chat', () => {
     sendMessage,
     loadSessions,
     clearAllData,
+    // Agent相关状态和方法
+    useAgentMode,
+    debugMode,
+    toolCallEvents,
+    setUseAgentMode: (value: boolean) => { useAgentMode.value = value; },
+    setDebugMode: (value: boolean) => { debugMode.value = value; },
+    clearToolCallEvents: () => { toolCallEvents.value = []; },
+    sendAgentMessage,
   };
 });

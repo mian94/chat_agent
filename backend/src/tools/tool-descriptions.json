@@ -1,0 +1,142 @@
+{
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "web_search",
+        "description": "搜索互联网获取最新的前端面试题、技术文章、官方文档等信息。当用户询问最新技术动态、面试题、或需要查找具体技术文档时使用。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "搜索关键词，例如：'Vue3 高频面试题 2024'、'React Hooks 最佳实践'"
+            },
+            "count": {
+              "type": "number",
+              "description": "返回结果数量，默认5条，最大10条",
+              "default": 5
+            }
+          },
+          "required": ["query"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "task_planner",
+        "description": "将复杂任务拆分为多个可执行的步骤。当用户提出复杂需求（如'帮我准备Vue面试'、'分析我的薄弱点'）时使用。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "task_description": {
+              "type": "string",
+              "description": "需要拆分的复杂任务描述"
+            },
+            "depth": {
+              "type": "string",
+              "enum": ["basic", "comprehensive", "deep"],
+              "description": "任务拆分深度：basic=基础3步，comprehensive=全面5步，deep=深入7步",
+              "default": "comprehensive"
+            }
+          },
+          "required": ["task_description"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "knowledge_organize",
+        "description": "整理和组织知识点，将零散的信息结构化。用于整理搜索结果、笔记、面试题等。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "string",
+              "description": "需要整理的原始内容"
+            },
+            "format": {
+              "type": "string",
+              "enum": ["outline", "mindmap", "faq", "comparison"],
+              "description": "整理格式：outline=大纲，mindmap=思维导图，faq=问答，comparison=对比",
+              "default": "outline"
+            },
+            "topic": {
+              "type": "string",
+              "description": "知识点主题，例如：'Vue3响应式原理'、'React Fiber架构'"
+            }
+          },
+          "required": ["content", "topic"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "question_generator",
+        "description": "根据知识点生成面试题。用于刷题模式、模拟面试、或用户要求出题时。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string",
+              "description": "出题的知识点主题，例如：'JavaScript闭包'、'Vue生命周期'"
+            },
+            "difficulty": {
+              "type": "string",
+              "enum": ["basic", "intermediate", "advanced"],
+              "description": "题目难度：basic=基础，intermediate=中级，advanced=进阶",
+              "default": "intermediate"
+            },
+            "count": {
+              "type": "number",
+              "description": "生成题目数量，默认1道，最多5道",
+              "default": 1
+            },
+            "type": {
+              "type": "string",
+              "enum": ["conceptual", "coding", "scenario", "mixed"],
+              "description": "题目类型：conceptual=概念题，coding=编程题，scenario=场景题，mixed=混合",
+              "default": "mixed"
+            }
+          },
+          "required": ["topic"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "answer_evaluator",
+        "description": "评估用户答案的质量并提供反馈。用于刷题模式中的批改功能。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string",
+              "description": "原始面试题"
+            },
+            "user_answer": {
+              "type": "string",
+              "description": "用户的答案"
+            },
+            "reference_answer": {
+              "type": "string",
+              "description": "参考答案（可选）"
+            },
+            "criteria": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "评分标准，例如：['准确性', '完整性', '深度', '实际应用']"
+            }
+          },
+          "required": ["question", "user_answer"]
+        }
+      }
+    }
+  ]
+}
