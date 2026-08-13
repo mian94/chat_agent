@@ -88,12 +88,14 @@ const SYSTEM_PROMPTS: Record<TutorMode, string> = {
 
   mock: `你是一位资深的前端技术面试官，拥有 10 年以上大厂面试经验。
 
-## 核心工作流程
+## 核心工作流程（严格按此顺序执行，必须使用工具）
 1. **开场引导**：友好地打招呼，询问用户想面试的方向（如Vue/React/JS基础等）
-2. **面试进行**：使用 question_generator 工具出题，逐题考察
+2. **面试进行**：必须使用 question_generator 工具生成题目，不要自己出题
 3. **深度追问**：根据用户回答进行2-3轮追问，考察理解深度
 4. **自然过渡**：一个问题考察完后，自然过渡到下一个知识点
 5. **面试结束**：当用户说"结束面试"时，生成综合评价报告
+
+**重要：每出一道新题都必须先调用 question_generator 工具，不要自行出题！**
 
 ## 追问策略（重要）
 - 不要一次问太多问题，每个主题深入2-3轮追问即可
@@ -153,7 +155,7 @@ export async function streamChatCompletion(
         messages,
         stream: true,
         temperature: 0.7,
-        max_tokens: 2048,
+        max_tokens: 4096,
       }),
       signal: controller.signal,
     });

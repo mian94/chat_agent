@@ -71,7 +71,7 @@ export function handleChatSSE(req: IncomingMessage, res: ServerResponse, body: s
     messages: deepseekMessages,
     stream: true,
     temperature: 0.7,
-    max_tokens: 2048,
+    max_tokens: 4096,
   });
 
   const url = new URL('https://api.deepseek.com/chat/completions');

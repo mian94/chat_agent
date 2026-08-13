@@ -134,7 +134,7 @@ async function processAgentLoop(
     messages,
     stream: true,
     temperature: 0.7,
-    max_tokens: 2048,
+    max_tokens: 4096,
   };
 
   // 添加工具描述（如果不是最后一轮）

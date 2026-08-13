@@ -341,11 +341,34 @@ async function handleDeleteMessage(messageId: string) {
   }
 }
 
-/** 复制消息内容 */
+/** 复制消息内容（兼容 HTTP 非安全上下文） */
 async function handleCopyMessage(content: string) {
+  // 优先使用 Clipboard API（需要 HTTPS 或 localhost）
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(content)
+      ElMessage.success('已复制到剪贴板')
+      return
+    } catch {
+      // API 存在但被拒绝，降级到 execCommand
+    }
+  }
+
+  // 降级方案：使用隐藏 textarea + execCommand（兼容 HTTP 环境）
   try {
-    await navigator.clipboard.writeText(content)
-    ElMessage.success('已复制到剪贴板')
+    const textarea = document.createElement('textarea')
+    textarea.value = content
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    const success = document.execCommand('copy')
+    document.body.removeChild(textarea)
+    if (success) {
+      ElMessage.success('已复制到剪贴板')
+    } else {
+      ElMessage.error('复制失败')
+    }
   } catch {
     ElMessage.error('复制失败')
   }
