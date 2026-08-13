@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { ChatSession, ChatMessage, TutorMode, ToolCallEvent } from '@/types';
+import type { ChatSession, ChatMessage, TutorMode, ToolCallEvent, WeakPoint } from '@/types';
 import { sendChatMessage, sendAgentChatMessage } from '@/api';
 import {
   getAllSessions,
@@ -9,6 +9,13 @@ import {
   saveMessage,
   deleteMessage as deleteMessageFromDB,
   clearAllData,
+  getAllWeakPoints,
+  getUnmasteredWeakPoints,
+  saveWeakPoint,
+  saveWeakPoints,
+  markWeakPointMastered,
+  deleteWeakPoint,
+  getWeakPointStats,
 } from '@/utils/db';
 
 /** 模式显示名称映射 */
@@ -88,6 +95,12 @@ export const useChatStore = defineStore('chat', () => {
   /** 当前会话的工具调用事件 */
   const toolCallEvents = ref<ToolCallEvent[]>([]);
 
+  /** 薄弱点列表 */
+  const weakPoints = ref<WeakPoint[]>([]);
+
+  /** 薄弱点统计 */
+  const weakPointStats = ref({ total: 0, unmastered: 0, topics: [] as string[] });
+
   /**
    * 从 IndexedDB 加载会话数据
    */
@@ -104,6 +117,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // 初始化时加载数据
   loadSessions();
+  loadWeakPoints();
 
   /** 获取当前会话 */
   const activeSession = computed(() => {
@@ -380,6 +394,11 @@ export const useChatStore = defineStore('chat', () => {
       .slice(0, -1)
       .map((m) => ({ role: m.role, content: m.content }));
 
+    // 获取薄弱点摘要（用于刷题模式和模拟面试模式）
+    const weakPointsSummary = (messageMode === 'quiz' || messageMode === 'mock') 
+      ? getWeakPointsSummary() 
+      : undefined;
+
     // 流式调用 Agent API
     await sendAgentChatMessage(
       requestMessages,
@@ -399,6 +418,32 @@ export const useChatStore = defineStore('chat', () => {
         if (msg) {
           await saveMessage({ ...msg, sessionId: session.id });
           await saveSession(session);
+          
+          // 在刷题/面试模式下，分析AI回复提取薄弱点
+          if (messageMode === 'quiz' || messageMode === 'mock') {
+            const lastUserMsg = session.messages
+              .filter((m) => m.role === 'user')
+              .slice(-1)[0];
+            
+            if (lastUserMsg && msg.content) {
+              // 尝试从AI回复中提取知识点和评分
+              const topicMatch = msg.content.match(/【知识点】[：:]?\s*(.+?)\n/);
+              const scoreMatch = msg.content.match(/(\d+)\s*\/\s*10|评分[：:]\s*(\d+)/);
+              const topic = topicMatch ? topicMatch[1].trim() : '前端基础';
+              
+              // 如果有评分且低于7分，记录薄弱点
+              if (scoreMatch) {
+                await extractAndSaveWeakPoints(
+                  lastUserMsg.content,
+                  lastUserMsg.content, // 用户的答案
+                  msg.content,
+                  topic,
+                  session.id,
+                  messageMode as 'quiz' | 'mock'
+                );
+              }
+            }
+          }
         }
       },
       // onError: 错误处理
@@ -416,12 +461,113 @@ export const useChatStore = defineStore('chat', () => {
       (event) => {
         console.log('[调试模式] 收到调试事件:', event.type, event.message);
         const userMsg = session.messages.find((m) => m.id === userMessage.id);
-        if (userMsg && userMsg.debugEvents) {
-          userMsg.debugEvents.push(event);
+        if (userMsg) {
+          if (!userMsg.debugEvents) {
+            userMsg.debugEvents = [];
+          }
+          // 使用展开运算符创建新数组，触发Vue响应式更新
+          userMsg.debugEvents = [...userMsg.debugEvents, event];
           console.log('[调试模式] 当前事件总数:', userMsg.debugEvents.length);
+          // 强制触发sessions的响应式更新
+          sessions.value = [...sessions.value];
         }
       },
+      weakPointsSummary,
     );
+  }
+
+  /**
+   * 加载薄弱点数据
+   */
+  async function loadWeakPoints() {
+    try {
+      weakPoints.value = await getAllWeakPoints();
+      weakPointStats.value = await getWeakPointStats();
+    } catch (error) {
+      console.error('加载薄弱点数据失败:', error);
+    }
+  }
+
+  /**
+   * 从AI回复中提取薄弱点并保存
+   */
+  async function extractAndSaveWeakPoints(
+    question: string,
+    userAnswer: string,
+    evaluationResult: string,
+    topic: string,
+    sessionId: string,
+    source: 'quiz' | 'mock' = 'quiz'
+  ) {
+    try {
+      // 解析评分
+      const scoreMatch = evaluationResult.match(/(\d+)\s*\/\s*10|评分[：:]\s*(\d+)/);
+      const score = scoreMatch ? parseInt(scoreMatch[1] || scoreMatch[2]) : undefined;
+      
+      // 如果得分低于7分，记录为薄弱点
+      if (score !== undefined && score < 7) {
+        const weakPoint: WeakPoint = {
+          id: `wp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          topic,
+          description: evaluationResult.slice(0, 200), // 截取前200字符作为描述
+          question,
+          userAnswer: userAnswer.slice(0, 500), // 截取前500字符
+          score,
+          source,
+          sessionId,
+          timestamp: Date.now(),
+          mastered: false,
+        };
+        
+        await saveWeakPoint(weakPoint);
+        weakPoints.value.unshift(weakPoint);
+        weakPointStats.value = await getWeakPointStats();
+        
+        console.log('[薄弱点] 已记录:', topic, '得分:', score);
+      }
+    } catch (error) {
+      console.error('提取薄弱点失败:', error);
+    }
+  }
+
+  /**
+   * 标记薄弱点为已掌握
+   */
+  async function markAsMastered(id: string) {
+    try {
+      await markWeakPointMastered(id);
+      const point = weakPoints.value.find((p) => p.id === id);
+      if (point) {
+        point.mastered = true;
+      }
+      weakPointStats.value = await getWeakPointStats();
+    } catch (error) {
+      console.error('标记薄弱点失败:', error);
+    }
+  }
+
+  /**
+   * 删除薄弱点
+   */
+  async function removeWeakPoint(id: string) {
+    try {
+      await deleteWeakPoint(id);
+      weakPoints.value = weakPoints.value.filter((p) => p.id !== id);
+      weakPointStats.value = await getWeakPointStats();
+    } catch (error) {
+      console.error('删除薄弱点失败:', error);
+    }
+  }
+
+  /**
+   * 获取未掌握的薄弱点摘要（用于注入到系统提示）
+   */
+  function getWeakPointsSummary(): string {
+    const unmastered = weakPoints.value.filter((p) => !p.mastered);
+    if (unmastered.length === 0) return '';
+    
+    const topics = [...new Set(unmastered.map((p) => p.topic))];
+    return `\n\n## 用户薄弱点（请优先针对这些知识点出题）\n${topics.map((t) => `- ${t}`).join('\n')}`;
   }
 
   return {
@@ -454,5 +600,13 @@ export const useChatStore = defineStore('chat', () => {
     setDebugMode: (value: boolean) => { debugMode.value = value; },
     clearToolCallEvents: () => { toolCallEvents.value = []; },
     sendAgentMessage,
+    // 薄弱点相关状态和方法
+    weakPoints,
+    weakPointStats,
+    loadWeakPoints,
+    extractAndSaveWeakPoints,
+    markAsMastered,
+    removeWeakPoint,
+    getWeakPointsSummary,
   };
 });

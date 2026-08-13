@@ -12,11 +12,11 @@ import { answerEvaluator } from './answer-evaluator';
 
 /** 工具执行函数映射 */
 const toolExecutors: Record<string, (params: Record<string, any>) => Promise<ToolResult>> = {
-  web_search: webSearch,
-  task_planner: taskPlanner,
-  knowledge_organize: knowledgeOrganize,
-  question_generator: questionGenerator,
-  answer_evaluator: answerEvaluator,
+  web_search: webSearch as (params: Record<string, any>) => Promise<ToolResult>,
+  task_planner: taskPlanner as (params: Record<string, any>) => Promise<ToolResult>,
+  knowledge_organize: knowledgeOrganize as (params: Record<string, any>) => Promise<ToolResult>,
+  question_generator: questionGenerator as (params: Record<string, any>) => Promise<ToolResult>,
+  answer_evaluator: answerEvaluator as (params: Record<string, any>) => Promise<ToolResult>,
 };
 
 /**

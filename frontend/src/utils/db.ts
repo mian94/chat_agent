@@ -4,7 +4,7 @@
  */
 
 import { openDB, type IDBPDatabase } from 'idb';
-import type { ChatSession, ChatMessage, TutorMode } from '@/types';
+import type { ChatSession, ChatMessage, TutorMode, WeakPoint } from '@/types';
 
 /** 会话元数据（不含消息） */
 export interface SessionMeta {
@@ -25,11 +25,16 @@ interface ChatDB {
     value: ChatMessage & { sessionId: string };
     indexes: { 'by-session': string };
   };
+  weak_points: {
+    key: string;
+    value: WeakPoint;
+    indexes: { 'by-topic': string; 'by-session': string; 'by-mastered': number };
+  };
 }
 
 /** 数据库名称和版本 */
 const DB_NAME = 'chat-agent';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 /** 数据库实例（单例模式） */
 let dbInstance: Promise<IDBPDatabase<ChatDB>> | null = null;
@@ -52,6 +57,15 @@ export function getDB(): Promise<IDBPDatabase<ChatDB>> {
 
         // 版本 2：会话不再有固定模式，模式移至消息级别
         // 数据迁移在应用层处理（兼容旧数据）
+
+        // 版本 3：新增薄弱点记录表
+        if (oldVersion < 3) {
+          const weakPointStore = db.createObjectStore('weak_points', { keyPath: 'id' });
+          weakPointStore.createIndex('by-topic', 'topic');
+          weakPointStore.createIndex('by-session', 'sessionId');
+          // 使用 mastered 字段作为索引（0=未掌握, 1=已掌握）
+          weakPointStore.createIndex('by-mastered', 'mastered');
+        }
       },
     });
   }
@@ -220,8 +234,90 @@ export async function isDBEmpty(): Promise<boolean> {
  */
 export async function clearAllData(): Promise<void> {
   const db = await getDB();
-  const tx = db.transaction(['sessions', 'messages'], 'readwrite');
+  const tx = db.transaction(['sessions', 'messages', 'weak_points'], 'readwrite');
   await tx.objectStore('sessions').clear();
   await tx.objectStore('messages').clear();
+  await tx.objectStore('weak_points').clear();
   await tx.done;
+}
+
+// ============================================================
+// 薄弱点操作
+// ============================================================
+
+/**
+ * 获取所有薄弱点（按时间倒序）
+ */
+export async function getAllWeakPoints(): Promise<WeakPoint[]> {
+  const db = await getDB();
+  const points = await db.getAll('weak_points');
+  return points.sort((a, b) => b.timestamp - a.timestamp);
+}
+
+/**
+ * 获取未掌握的薄弱点
+ */
+export async function getUnmasteredWeakPoints(): Promise<WeakPoint[]> {
+  const db = await getDB();
+  const index = db.transaction('weak_points').store.index('by-mastered');
+  const points = await index.getAll(0);
+  return points.sort((a, b) => b.timestamp - a.timestamp);
+}
+
+/**
+ * 按知识点获取薄弱点
+ */
+export async function getWeakPointsByTopic(topic: string): Promise<WeakPoint[]> {
+  const db = await getDB();
+  const index = db.transaction('weak_points').store.index('by-topic');
+  return index.getAll(topic);
+}
+
+/**
+ * 保存薄弱点（新增或更新）
+ */
+export async function saveWeakPoint(point: WeakPoint): Promise<void> {
+  const db = await getDB();
+  await db.put('weak_points', point);
+}
+
+/**
+ * 批量保存薄弱点
+ */
+export async function saveWeakPoints(points: WeakPoint[]): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction('weak_points', 'readwrite');
+  await Promise.all(points.map((p) => tx.store.put(p)));
+  await tx.done;
+}
+
+/**
+ * 标记薄弱点为已掌握
+ */
+export async function markWeakPointMastered(id: string): Promise<void> {
+  const db = await getDB();
+  const point = await db.get('weak_points', id);
+  if (point) {
+    point.mastered = true;
+    await db.put('weak_points', point);
+  }
+}
+
+/**
+ * 删除薄弱点
+ */
+export async function deleteWeakPoint(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete('weak_points', id);
+}
+
+/**
+ * 获取薄弱点统计
+ */
+export async function getWeakPointStats(): Promise<{ total: number; unmastered: number; topics: string[] }> {
+  const db = await getDB();
+  const all = await db.getAll('weak_points');
+  const unmastered = all.filter((p) => !p.mastered);
+  const topics = [...new Set(all.map((p) => p.topic))];
+  return { total: all.length, unmastered: unmastered.length, topics };
 }

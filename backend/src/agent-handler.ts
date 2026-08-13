@@ -29,7 +29,7 @@ export function handleAgentChat(req: IncomingMessage, res: ServerResponse, body:
     return;
   }
 
-  const { messages, mode, shouldIntroduce, debugMode = false, maxToolRounds = MAX_TOOL_ROUNDS } = parsed;
+  const { messages, mode, shouldIntroduce, debugMode = false, maxToolRounds = MAX_TOOL_ROUNDS, weakPointsSummary } = parsed;
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -63,6 +63,11 @@ export function handleAgentChat(req: IncomingMessage, res: ServerResponse, body:
   // 如果需要表明身份，在系统提示词后添加指令
   if (shouldIntroduce) {
     systemPrompt += '\n\n请在回复的第一句话中简要说明你的身份和当前模式，例如"我是你的前端技术导师"或"我是你的面试出题老师"。';
+  }
+
+  // 注入薄弱点上下文（如果有）
+  if (weakPointsSummary) {
+    systemPrompt += weakPointsSummary;
   }
 
   // 添加工具调用相关的系统提示
@@ -102,7 +107,7 @@ export function handleAgentChat(req: IncomingMessage, res: ServerResponse, body:
  * 实现工具调用循环和反思迭代
  */
 async function processAgentLoop(
-  messages: Array<{ role: string; content: string }>,
+  messages: Array<{ role: string; content: string | null; tool_calls?: any[] }>,
   apiKey: string,
   res: ServerResponse,
   aborted: boolean,
@@ -259,6 +264,12 @@ async function processAgentLoop(
               : tc.function.arguments,
             result: result,
             debugLog: debugMode || DEBUG_MODE ? {
+              id: `debug-${Date.now()}-${i}`,
+              timestamp: Date.now(),
+              toolName: tc.function.name,
+              parameters: typeof tc.function.arguments === 'string'
+                ? JSON.parse(tc.function.arguments)
+                : tc.function.arguments,
               duration: debugLog?.duration,
               status: debugLog?.status || (result.success ? 'success' : 'error'),
               result: result,

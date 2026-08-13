@@ -77,21 +77,42 @@ function generateOrganizedContent(
  * @returns 大纲内容
  */
 function generateOutline(content: string, topic: string): string {
+  // 尝试从内容中提取URL信息（格式：标题\nURL\n摘要）
+  const urlPattern = /https?:\/\/[^\s]+/g;
+  const urls: string[] = [];
+  let match;
+  
+  // 提取所有URL
+  while ((match = urlPattern.exec(content)) !== null) {
+    urls.push(match[0]);
+  }
+  
   // 简单的大纲生成逻辑
   const lines = content.split('\n').filter(line => line.trim());
   const outline: string[] = [`# ${topic} 知识大纲\n`];
   
   let currentSection = '';
   let sectionIndex = 0;
+  let urlIndex = 0;
   
   for (const line of lines) {
+    // 跳过URL行
+    if (line.match(/^https?:\/\//)) continue;
+    
     // 检测是否是标题（简单的启发式判断）
     if (line.includes('：') || line.includes(':') || line.startsWith('#')) {
       sectionIndex++;
       currentSection = line.replace(/^[#\s]+/, '').trim();
       outline.push(`## ${sectionIndex}. ${currentSection}\n`);
     } else if (line.trim()) {
-      outline.push(`- ${line.trim()}\n`);
+      // 如果有对应的URL，添加为参考链接
+      if (urlIndex < urls.length) {
+        outline.push(`- ${line.trim()}\n`);
+        outline.push(`  参考链接：${urls[urlIndex]}\n`);
+        urlIndex++;
+      } else {
+        outline.push(`- ${line.trim()}\n`);
+      }
     }
   }
   
@@ -105,6 +126,14 @@ function generateOutline(content: string, topic: string): string {
     outline.push(`- ${topic} 的使用场景和最佳实践\n`);
     outline.push(`## 4. 常见问题\n`);
     outline.push(`- ${topic} 的常见问题和解决方案\n`);
+  }
+  
+  // 在末尾添加完整的参考链接列表
+  if (urls.length > 0) {
+    outline.push(`\n## 参考链接\n`);
+    for (const url of urls) {
+      outline.push(`- ${url}\n`);
+    }
   }
   
   return outline.join('');

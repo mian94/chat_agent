@@ -618,6 +618,141 @@ export async function saveSession(session: ChatSession): Promise<void> {
 
 ---
 
+### Bug #13：调试日志无法实时更新
+
+#### 现象
+开启调试模式后，调试日志区域显示的事件数量一直为0，需要手动关闭再展开才能看到更新后的数据。控制台显示事件确实在不断接收（事件总数从1增加到15），但ToolCallLog组件显示的events数量一直是0。
+
+#### 原因分析
+这是**Vue computed属性的深层响应式追踪问题**。
+
+在store中，`activeMessages`是computed属性：
+```typescript
+const activeMessages = computed(() => {
+  return activeSession.value?.messages || [];
+});
+```
+
+当修改`session.messages`数组中元素的属性（如`debugEvents`）时：
+```typescript
+// ❌ 这种方式Vue无法追踪到变化
+userMsg.debugEvents.push(event);
+```
+
+Vue的响应式系统通过Proxy追踪对象变化，但对数组的`push`等变异方法在深层嵌套场景下可能无法正确检测。虽然`debugEvents`数组被替换为新数组，但Vue的computed属性依赖追踪是基于引用的，而不是深层内容的。
+
+#### 解决方案
+**方案1：使用展开运算符创建新数组**
+```typescript
+// ✅ 使用展开运算符创建新数组，触发Vue响应式更新
+userMsg.debugEvents = [...userMsg.debugEvents, event];
+```
+
+**方案2：强制触发sessions的响应式更新**
+```typescript
+// ✅ 强制触发sessions的响应式更新
+sessions.value = [...sessions.value];
+```
+
+**完整代码：**
+```typescript
+// onDebugEvent回调
+(event) => {
+  const userMsg = session.messages.find((m) => m.id === userMessage.id);
+  if (userMsg) {
+    if (!userMsg.debugEvents) {
+      userMsg.debugEvents = [];
+    }
+    // 使用展开运算符创建新数组，触发Vue响应式更新
+    userMsg.debugEvents = [...userMsg.debugEvents, event];
+    // 强制触发sessions的响应式更新
+    sessions.value = [...sessions.value];
+  }
+}
+```
+
+#### 关键点
+- Vue3的响应式系统对深层嵌套的对象/数组的追踪有限制
+- 使用展开运算符创建新数组引用，可以确保Vue检测到变化
+- `sessions.value = [...sessions.value]`创建新的数组引用，触发所有computed属性重新计算
+- 这种方式比`push`更符合Vue的响应式设计理念
+
+---
+
+## 阶段4
+
+### Bug #14：问答模式参考资料链接显示为普通文字
+
+#### 现象
+问答模式下，Agent生成的回答中参考资料部分只显示链接文字，没有可点击的URL。例如：
+```
+五、参考资料
+Vue3 官方文档 - 响应式基础
+Vue3 响应式系统原理深度解析 - 腾讯云
+深入解析 Vue3 响应式系统 - CSDN
+```
+实际应该显示为：
+```
+[Vue3 官方文档 - 响应式基础](https://vuejs.org/xxx)
+[Vue3 响应式系统原理深度解析 - 腾讯云](https://cloud.tencent.com/xxx)
+```
+
+#### 原因分析
+问题出在**知识整理工具丢失URL信息**。
+
+数据流程：
+1. `web_search`工具返回了完整的 `title` + `url`
+2. `knowledge_organize`工具在整理内容时，只处理文本内容，**没有保留URL**
+3. Agent最终生成回答时，只看到了整理后的文本，没有URL，所以只能写出链接文字
+
+#### 解决方案
+**修改knowledge_organize工具**，使其在整理内容时保留URL信息：
+
+```typescript
+function generateOutline(content: string, topic: string): string {
+  // 提取所有URL
+  const urlPattern = /https?:\/\/[^\s]+/g;
+  const urls: string[] = [];
+  let match;
+  while ((match = urlPattern.exec(content)) !== null) {
+    urls.push(match[0]);
+  }
+  
+  // 大纲生成时保留URL
+  // ...
+  
+  // 在末尾添加完整的参考链接列表
+  if (urls.length > 0) {
+    outline.push(`\n## 参考链接\n`);
+    for (const url of urls) {
+      outline.push(`- ${url}\n`);
+    }
+  }
+  
+  return outline.join('');
+}
+```
+
+**同时优化System Prompt**，明确要求Agent使用标准Markdown链接格式：
+
+```markdown
+## 链接格式规范（非常重要）
+- 引用来源时必须使用标准Markdown链接格式：[链接文字](URL)
+- 例如：[Vue3官方文档](https://vuejs.org/)
+- 不要只写链接文字不写URL，也不要只写URL不写链接文字
+- 参考资料部分必须列出完整的可点击链接
+- 示例格式：
+  - [Vue3 响应式系统原理深度解析 - 腾讯云](https://cloud.tencent.com/xxx)
+  - [深入解析 Vue3 响应式系统 - CSDN](https://blog.csdn.net/xxx)
+```
+
+#### 关键点
+- 工具链中的数据传递需要保留完整信息，不能只传递部分内容
+- System Prompt需要明确、具体的格式要求，最好包含示例
+- 搜索结果的URL是重要的参考信息，需要在整个处理流程中保持完整
+
+---
+
 ## 总结
 
 ### 阶段1/阶段2
@@ -641,7 +776,14 @@ export async function saveSession(session: ChatSession): Promise<void> {
 | 调试日志消失 | 未绑定到消息 | 绑定到用户消息 | 状态管理 |
 | 布局问题 | 固定宽度限制 | 响应式设计 | CSS布局、媒体查询 |
 | DataCloneError | 不可序列化字段 | 移除debugEvents | IndexedDB限制 |
+| 调试日志无法实时更新 | Vue computed深层追踪限制 | 展开运算符+强制更新 | Vue响应式原理 |
+
+### 阶段4
+
+| Bug | 原因 | 解决方案 | 面试考点 |
+|-----|------|----------|----------|
+| 参考资料链接显示为普通文字 | 知识整理工具丢失URL | 保留URL+优化Prompt | 工具链数据传递、Prompt工程 |
 
 ---
 
-*最后更新：2026-08-11*
+*最后更新：2026-08-12*

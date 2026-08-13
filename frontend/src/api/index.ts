@@ -88,13 +88,14 @@ export async function sendAgentChatMessage(
   onDone: () => void,
   onError: (error: string) => void,
   onDebugEvent?: (event: ToolCallEvent) => void,
+  weakPointsSummary?: string,
 ): Promise<void> {
   try {
     const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
     const response = await fetch(`${baseURL}/agent/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, mode, shouldIntroduce, debugMode }),
+      body: JSON.stringify({ messages, mode, shouldIntroduce, debugMode, weakPointsSummary }),
     });
 
     if (!response.ok) {

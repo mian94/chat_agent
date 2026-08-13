@@ -80,3 +80,27 @@ export interface AgentMessage extends ChatMessage {
   debugLogs?: DebugLog[];
   toolCallEvents?: ToolCallEvent[];
 }
+
+/** 薄弱点记录 */
+export interface WeakPoint {
+  /** 唯一标识 */
+  id: string;
+  /** 所属知识点 */
+  topic: string;
+  /** 具体薄弱描述 */
+  description: string;
+  /** 相关题目（可选） */
+  question?: string;
+  /** 用户答案（可选） */
+  userAnswer?: string;
+  /** 得分（0-10） */
+  score?: number;
+  /** 来源：quiz/mock */
+  source: 'quiz' | 'mock';
+  /** 关联会话ID */
+  sessionId: string;
+  /** 记录时间 */
+  timestamp: number;
+  /** 是否已掌握 */
+  mastered: boolean;
+}

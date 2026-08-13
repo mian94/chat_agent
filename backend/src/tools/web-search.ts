@@ -59,7 +59,7 @@ export async function webSearch(params: {
       };
     }
 
-    const data: ZhipuSearchResponse = await response.json();
+    const data = await response.json() as ZhipuSearchResponse;
     const searchResults = data.search_result || [];
 
     console.log(`[联网搜索] 找到 ${searchResults.length} 个结果`);
