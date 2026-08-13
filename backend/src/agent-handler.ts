@@ -99,7 +99,57 @@ export function handleAgentChat(req: IncomingMessage, res: ServerResponse, body:
   ];
 
   // 开始Agent处理循环
-  processAgentLoop(deepseekMessages, apiKey, res, aborted, debugMode, maxToolRounds, 0, []);
+  processAgentLoop(deepseekMessages, apiKey, res, aborted, debugMode, maxToolRounds, 0, [], mode || 'qa');
+}
+
+/**
+ * 根据模式和历史消息决定 tool_choice，实现强制工具调用策略
+ * - quiz（刷题）：出题强制 question_generator，批改强制 answer_evaluator
+ * - mock（模拟面试）：开场/新题强制 question_generator，结束面试时自由发挥
+ * - qa（问答）：首次实质性问题强制 web_search
+ */
+function getToolChoice(
+  mode: string,
+  messages: Array<{ role: string; content: string | null }>,
+  currentRound: number
+): any {
+  // 工具循环中（工具结果返回后），让模型自由决定是否继续调用
+  if (currentRound > 0) return 'auto';
+
+  const assistants = messages.filter((m) => m.role === 'assistant' && m.content);
+  const lastAssistant = assistants[assistants.length - 1];
+  const lastAssistantContent = lastAssistant?.content || '';
+  const hasAssistantQuestion = /[？?]\s*$/.test(lastAssistantContent.trim());
+  const users = messages.filter((m) => m.role === 'user' && m.content);
+  const lastUserContent = users[users.length - 1]?.content || '';
+  const isEndingInterview = /结束面试|不面了|结束|评估报告|给个评价|stop|end/i.test(lastUserContent);
+
+  if (mode === 'quiz') {
+    // 刷题模式：首次提问或用户要求新题 → 强制出题；用户回答后 → 强制批改
+    if (!lastAssistant || !hasAssistantQuestion) {
+      return { type: 'function', function: { name: 'question_generator' } };
+    }
+    return { type: 'function', function: { name: 'answer_evaluator' } };
+  }
+
+  if (mode === 'mock') {
+    // 模拟面试：结束面试时不强制；开场或用户要求新题 → 强制出题
+    if (isEndingInterview) return 'auto';
+    if (!lastAssistant || !hasAssistantQuestion) {
+      return { type: 'function', function: { name: 'question_generator' } };
+    }
+    return 'auto';
+  }
+
+  if (mode === 'qa') {
+    // 问答模式：首次提出实质性知识问题 → 强制搜索
+    if (!lastAssistant && lastUserContent.length > 15) {
+      return { type: 'function', function: { name: 'web_search' } };
+    }
+    return 'auto';
+  }
+
+  return 'auto';
 }
 
 /**
@@ -114,7 +164,8 @@ async function processAgentLoop(
   debugMode: boolean,
   maxRounds: number,
   currentRound: number,
-  toolCallHistory: Array<{ toolCall: ToolCall; result: ToolResult; debugLog?: DebugLog }>
+  toolCallHistory: Array<{ toolCall: ToolCall; result: ToolResult; debugLog?: DebugLog }>,
+  mode: string = 'qa'
 ): Promise<void> {
   if (aborted) return;
 
@@ -137,10 +188,10 @@ async function processAgentLoop(
     max_tokens: 4096,
   };
 
-  // 添加工具描述（如果不是最后一轮）
+  // 添加工具描述（如果不是最后一轮），并根据模式强制工具调用
   if (currentRound < maxRounds) {
     requestBody.tools = toolDescriptions.tools;
-    requestBody.tool_choice = 'auto';
+    requestBody.tool_choice = getToolChoice(mode, messages, currentRound);
   }
 
   // 调用DeepSeek API
@@ -320,7 +371,8 @@ async function processAgentLoop(
           debugMode,
           maxRounds,
           currentRound + 1,
-          newHistory
+          newHistory,
+          mode
         );
       } else {
         // 没有工具调用或达到最大轮次，发送最终响应
