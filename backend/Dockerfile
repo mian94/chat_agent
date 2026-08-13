@@ -4,6 +4,9 @@ FROM node:22-alpine AS builder
 # 设置工作目录
 WORKDIR /app
 
+# 配置npm使用淘宝镜像源（加速下载）
+RUN npm config set registry https://registry.npmmirror.com
+
 # 复制 package.json 和 package-lock.json
 COPY package*.json ./
 
