@@ -1,5 +1,5 @@
 # 后端 Dockerfile
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 # 设置工作目录
 WORKDIR /app
@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # 安装依赖
-RUN npm ci
+RUN npm install
 
 # 复制源代码
 COPY . .
@@ -17,7 +17,7 @@ COPY . .
 RUN npm run build
 
 # 生产阶段
-FROM node:18-alpine
+FROM node:22-alpine
 
 # 设置工作目录
 WORKDIR /app
@@ -26,7 +26,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # 只安装生产依赖
-RUN npm ci --only=production
+RUN npm install --only=production
 
 # 从构建阶段复制编译后的代码
 COPY --from=builder /app/dist ./dist
