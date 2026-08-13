@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  # 后端服务
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chat-agent-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      - AGENT_DEBUG_MODE=${AGENT_DEBUG_MODE:-false}
+    volumes:
+      - ./backend/.env:/app/.env:ro
+    restart: unless-stopped
+    networks:
+      - chat-agent-network
+
+  # 前端服务
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: chat-agent-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - chat-agent-network
+
+networks:
+  chat-agent-network:
+    driver: bridge
